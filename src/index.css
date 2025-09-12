@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@source "./src/**/*.{js,jsx,ts,tsx}";
+
+/* Optional: Custom theme variables */
+@theme {
+  --color-primary: #b45309; /* amber-800 */
+  --color-secondary: #fef3c7; /* amber-100 */
+  --font-family-serif: "Playfair Display", serif;
+  --font-family-sans: "Inter", sans-serif;
+}

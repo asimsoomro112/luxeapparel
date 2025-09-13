@@ -1,7 +1,83 @@
 import React, { useState, useEffect, useContext, createContext } from 'react';
 import { db, auth, googleProvider } from './firebase';
-import { collection, getDocs, addDoc, setDoc, doc, query, orderBy, limit } from 'firebase/firestore';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { collection, getDocs, getDoc, addDoc, setDoc, doc, query, orderBy, limit, where, onSnapshot } from 'firebase/firestore';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+// --- Spinner CSS ---
+const spinnerStyles = `
+  .loader {
+    transform: rotateZ(45deg);
+    perspective: 1000px;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    color: #fff;
+  }
+  .loader:before,
+  .loader:after {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: inherit;
+    height: inherit;
+    border-radius: 50%;
+    transform: rotateX(70deg);
+    animation: 1s spin linear infinite;
+  }
+  .loader:after {
+    color: #FF3D00;
+    transform: rotateY(70deg);
+    animation-delay: .4s;
+  }
+  @keyframes rotate {
+    0% {
+      transform: translate(-50%, -50%) rotateZ(0deg);
+    }
+    100% {
+      transform: translate(-50%, -50%) rotateZ(360deg);
+    }
+  }
+  @keyframes rotateccw {
+    0% {
+      transform: translate(-50%, -50%) rotate(0deg);
+    }
+    100% {
+      transform: translate(-50%, -50%) rotate(-360deg);
+    }
+  }
+  @keyframes spin {
+    0%,
+    100% {
+      box-shadow: .2em 0px 0 0px currentcolor;
+    }
+    12% {
+      box-shadow: .2em .2em 0 0 currentcolor;
+    }
+    25% {
+      box-shadow: 0 .2em 0 0px currentcolor;
+    }
+    37% {
+      box-shadow: -.2em .2em 0 0 currentcolor;
+    }
+    50% {
+      box-shadow: -.2em 0 0 0 currentcolor;
+    }
+    62% {
+      box-shadow: -.2em -.2em 0 0 currentcolor;
+    }
+    75% {
+      box-shadow: 0px -.2em 0 0 currentcolor;
+    }
+    87% {
+      box-shadow: .2em -.2em 0 0 currentcolor;
+    }
+  }
+`;
 
 // --- ICONS ---
 const SunIcon = ({ className }) => (
@@ -44,11 +120,13 @@ const CloseIcon = ({ className }) => (
 const ThemeContext = createContext();
 const CartContext = createContext();
 const AuthContext = createContext();
-const PageContext = createContext();
 
 // --- PROVIDERS ---
 const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
 
   useEffect(() => {
     const root = document.documentElement;
@@ -61,7 +139,9 @@ const ThemeProvider = ({ children }) => {
     }
   }, [isDarkMode]);
 
-  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const toggleTheme = () => {
+    setIsDarkMode(prev => !prev);
+  };
 
   return <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>{children}</ThemeContext.Provider>;
 };
@@ -75,16 +155,18 @@ const CartProvider = ({ children }) => {
       if (existingItem) {
         return prevItems.map(item =>
           item.id === product.id && item.size === size
-            ? { ...item, quantity: item.quantity + quantity }
+            ? { ...item, quantity: Math.min(item.quantity + quantity, product.stock) }
             : item
         );
       }
-      return [...prevItems, { ...product, size, quantity }];
+      return [...prevItems, { ...product, size, quantity: Math.min(quantity, product.stock) }];
     });
+    toast.success(`${product.name} (Size: ${size}) added to cart!`);
   };
 
   const removeFromCart = (productId, size) => {
     setCartItems(prevItems => prevItems.filter(item => !(item.id === productId && item.size === size)));
+    toast.success('Item removed from cart!');
   };
 
   const updateQuantity = (productId, size, newQuantity) => {
@@ -94,15 +176,17 @@ const CartProvider = ({ children }) => {
       setCartItems(prevItems =>
         prevItems.map(item =>
           item.id === productId && item.size === size
-            ? { ...item, quantity: newQuantity }
+            ? { ...item, quantity: Math.min(newQuantity, item.stock || Infinity) }
             : item
         )
       );
+      toast.success('Quantity updated!');
     }
   };
 
   const clearCart = () => {
     setCartItems([]);
+    toast.success('Cart cleared!');
   };
 
   const cartTotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
@@ -121,31 +205,39 @@ const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('onAuthStateChanged triggered:', { currentUser: currentUser ? { email: currentUser.email, uid: currentUser.uid } : null });
       try {
         if (currentUser) {
-          await setDoc(doc(db, 'users', currentUser.uid), {
-            name: currentUser.displayName || currentUser.email.split('@')[0],
-            email: currentUser.email,
-            address: currentUser.address || 'Not set',
-            joined: new Date().toISOString().split('T')[0]
-          }, { merge: true });
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          const userData = userDoc.exists() ? userDoc.data() : {};
           const ordersSnapshot = await getDocs(collection(db, `users/${currentUser.uid}/orders`));
           const orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setUser({
             uid: currentUser.uid,
             name: currentUser.displayName || currentUser.email.split('@')[0],
             email: currentUser.email,
-            address: currentUser.address || 'Not set',
+            address: userData.address || 'Not set',
+            image: userData.image || '',
+            joined: userData.joined || new Date().toISOString().split('T')[0],
             orders
           });
+          console.log('User set:', { uid: currentUser.uid, email: currentUser.email });
         } else {
           setUser(null);
+          console.log('No user authenticated');
         }
       } catch (error) {
-        console.error('Auth state change error:', error);
+        console.error('Auth state change error:', error.code, error.message);
+        toast.error('Error loading user data.');
+        setUser(null);
       } finally {
         setLoading(false);
+        console.log('Auth loading complete:', { loading: false, user: user ? { email: user.email } : null });
       }
+    }, (error) => {
+      console.error('onAuthStateChanged error:', error.code, error.message);
+      toast.error('Authentication error occurred.');
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -153,15 +245,21 @@ const AuthProvider = ({ children }) => {
   const signup = async (name, email, password) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(userCredential.user, { displayName: name });
       await setDoc(doc(db, 'users', userCredential.user.uid), {
+        id: userCredential.user.uid,
         name,
         email,
         address: 'Not set',
+        image: '',
         joined: new Date().toISOString().split('T')[0]
       });
+      console.log('User created in Firestore:', { id: userCredential.user.uid, email, name });
+      toast.success('Account created successfully!');
       return true;
     } catch (error) {
-      console.error('Signup error:', error.message);
+      console.error('Signup error:', error.code, error.message);
+      toast.error(`Signup failed: ${error.message}`);
       return false;
     }
   };
@@ -169,19 +267,33 @@ const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      console.log('Login successful:', email);
+      toast.success('Logged in successfully!');
       return true;
     } catch (error) {
-      console.error('Login error:', error.message);
+      console.error('Login error:', error.code, error.message);
+      toast.error(`Login failed: ${error.message}`);
       return false;
     }
   };
 
   const loginWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const userCredential = await signInWithPopup(auth, googleProvider);
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        id: userCredential.user.uid,
+        name: userCredential.user.displayName || userCredential.user.email.split('@')[0],
+        email: userCredential.user.email,
+        address: 'Not set',
+        image: userCredential.user.photoURL || '',
+        joined: new Date().toISOString().split('T')[0]
+      }, { merge: true });
+      console.log('Google login successful:', userCredential.user.email);
+      toast.success('Logged in with Google!');
       return true;
     } catch (error) {
-      console.error('Google login error:', error.message);
+      console.error('Google login error:', error.code, error.message);
+      toast.error(`Google login failed: ${error.message}`);
       return false;
     }
   };
@@ -189,8 +301,11 @@ const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await signOut(auth);
+      console.log('User logged out');
+      toast.success('Logged out successfully!');
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Logout error:', error.code, error.message);
+      toast.error('Logout failed.');
     }
   };
 
@@ -201,26 +316,35 @@ const AuthProvider = ({ children }) => {
   );
 };
 
-const PageProvider = ({ children }) => {
-  const [page, setPage] = useState({ name: 'home', data: null });
+// --- PROTECTED ROUTE ---
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useContext(AuthContext);
+  const location = useLocation();
 
-  const navigate = (name, data = null) => {
-    console.log('Navigating to:', name); // Debug navigation
-    setPage({ name, data });
-    window.scrollTo(0, 0);
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
-  return <PageContext.Provider value={{ page, navigate }}>{children}</PageContext.Provider>;
+  if (!user) {
+    console.log('ProtectedRoute: Redirecting to /login from', location.pathname);
+    return <Navigate to="/login" state={{ redirect: location.pathname }} replace />;
+  }
+
+  return children;
 };
 
 // --- REUSABLE UI COMPONENTS ---
 const ProductCard = ({ product }) => {
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
   return (
-    <div onClick={() => navigate('product', { id: product.id })} className="group cursor-pointer">
+    <div onClick={() => navigate(`/product/${product.id}`)} className="group cursor-pointer">
       <div className="overflow-hidden bg-gray-100 dark:bg-gray-800/50 rounded-lg">
         <img
-          src={product.image}
+          src={product.image || 'https://placehold.co/400x600/0a0a0a/ffffff?text=Product'}
           alt={product.name}
           className="w-full h-auto object-cover aspect-[2/3] group-hover:scale-105 transition-transform duration-500 ease-in-out"
         />
@@ -239,29 +363,31 @@ const ProductCard = ({ product }) => {
 
 // --- PAGE COMPONENTS ---
 const HomePage = () => {
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'products'));
-        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProducts(productList);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching products:', error);
-        setError('Failed to load products. Please try again.');
-        setLoading(false);
-      }
-    };
-    fetchProducts();
+    const unsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
+      const productList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('Products fetched:', productList.length);
+      setProducts(productList);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching products:', error.code, error.message);
+      toast.error('Failed to load products.');
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
-  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -270,7 +396,7 @@ const HomePage = () => {
         <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
           <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-wider leading-tight">The Autumn Collection</h1>
           <p className="mt-4 text-lg md:text-xl max-w-2xl mx-auto">Discover pieces that blend timeless design with contemporary sensibilities.</p>
-          <button onClick={() => navigate('shop')} className="mt-8 px-8 py-3 bg-white/20 backdrop-blur-sm border border-white text-white uppercase tracking-widest text-sm font-semibold hover:bg-white hover:text-black transition-colors duration-300 rounded-sm">
+          <button onClick={() => navigate('/shop')} className="mt-8 px-8 py-3 bg-white/20 backdrop-blur-sm border border-white text-white uppercase tracking-widest text-sm font-semibold hover:bg-white hover:text-black transition-colors duration-300 rounded-sm">
             Explore Now
           </button>
         </div>
@@ -290,32 +416,40 @@ const HomePage = () => {
 };
 
 const ShopPage = () => {
+  const { search } = useLocation();
+  const category = new URLSearchParams(search).get('category');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'products'));
-        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProducts(productList);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching products:', error);
-        setError('Failed to load products. Please try again.');
-        setLoading(false);
-      }
-    };
-    fetchProducts();
-  }, []);
+    let q = collection(db, 'products');
+    if (category) {
+      q = query(collection(db, 'products'), where('category', '==', category));
+    }
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const productList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('Products fetched:', productList.length);
+      setProducts(productList);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching products:', error.code, error.message);
+      toast.error('Failed to load products.');
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [category]);
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
-  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
-      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Shop All</h1>
+      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Shop {category || 'All'}</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
         {products.map(product => (
           <ProductCard key={product.id} product={product} />
@@ -328,27 +462,29 @@ const ShopPage = () => {
 const NewArrivalsPage = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(6));
-        const querySnapshot = await getDocs(q);
-        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProducts(productList);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching new arrivals:', error);
-        setError('Failed to load new arrivals. Please try again.');
-        setLoading(false);
-      }
-    };
-    fetchProducts();
+    const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(6));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const productList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('New arrivals fetched:', productList.length);
+      setProducts(productList);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching new arrivals:', error.code, error.message);
+      toast.error('Failed to load new arrivals.');
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
-  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
@@ -362,30 +498,88 @@ const NewArrivalsPage = () => {
   );
 };
 
+const CategoriesPage = () => {
+  const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'categories'), (snapshot) => {
+      const categoryList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('Categories fetched:', categoryList);
+      setCategories(categoryList.length > 0 ? categoryList : [...new Set(snapshot.docs.map(doc => doc.data().name))]);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching categories:', error.code, error.message);
+      toast.error('Failed to load categories.');
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Categories</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+        {categories.map(category => (
+          <div
+            key={typeof category === 'string' ? category : category.id}
+            onClick={() => navigate(`/shop?category=${encodeURIComponent(typeof category === 'string' ? category : category.name)}`)}
+            className="group cursor-pointer"
+          >
+            <div className="overflow-hidden bg-gray-100 dark:bg-gray-800/50 rounded-lg">
+              <img
+                src={typeof category === 'string' ? `https://placehold.co/400x600/0a0a0a/ffffff?text=${encodeURIComponent(category)}` : category.image || 'https://placehold.co/400x600/0a0a0a/ffffff?text=Category'}
+                alt={typeof category === 'string' ? category : category.name}
+                className="w-full h-auto object-cover aspect-[2/3] group-hover:scale-105 transition-transform duration-500 ease-in-out"
+              />
+            </div>
+            <div className="mt-4 text-center">
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-amber-800 dark:group-hover:text-amber-600 transition-colors duration-300">
+                {typeof category === 'string' ? category : category.name}
+              </h3>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const CollectionsPage = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const q = query(collection(db, 'products'), orderBy('category'));
-        const querySnapshot = await getDocs(q);
-        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProducts(productList);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching collections:', error);
-        setError('Failed to load collections. Please try again.');
-        setLoading(false);
-      }
-    };
-    fetchProducts();
+    const q = query(collection(db, 'products'), orderBy('category'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const productList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('Collections fetched:', productList.length);
+      setProducts(productList);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching collections:', error.code, error.message);
+      toast.error('Failed to load collections.');
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
-  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
@@ -399,61 +593,64 @@ const CollectionsPage = () => {
   );
 };
 
-const ProductPage = ({ id }) => {
-  const { addToCart, user } = useContext(CartContext);
-  const { navigate } = useContext(PageContext);
+const ProductPage = () => {
+  const { addToCart } = useContext(CartContext);
+  const navigate = useNavigate();
+  const { id } = useParams();
   const [product, setProduct] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
   const [quantity, setQuantity] = useState(1);
-  const [notification, setNotification] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchProduct = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'products'));
-        const foundProduct = querySnapshot.docs.find(doc => doc.id === id);
-        if (foundProduct) {
-          setProduct({ id: foundProduct.id, ...foundProduct.data() });
-        } else {
-          setError('Product not found.');
-        }
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching product:', error);
-        setError('Failed to load product. Please try again.');
-        setLoading(false);
+    const unsubscribe = onSnapshot(doc(db, 'products', id), (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        setProduct({ id: docSnapshot.id, ...docSnapshot.data() });
+        console.log('Product fetched:', { id: docSnapshot.id });
+      } else {
+        toast.error('Product not found.');
       }
-    };
-    fetchProduct();
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching product:', error.code, error.message);
+      toast.error('Failed to load product.');
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, [id]);
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
-  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
+  if (!product) return <div className="text-center py-20 text-red-600">Product not found.</div>;
 
   const handleAddToCart = () => {
-    if (!user) {
-      navigate('login');
-      setNotification('Please login to add to cart.');
-      setTimeout(() => setNotification(''), 3000);
+    if (!selectedSize) {
+      toast.error('Please select a size.');
       return;
     }
-    if (!selectedSize) {
-      setNotification('Please select a size.');
-      setTimeout(() => setNotification(''), 3000);
+    if (quantity > product.stock) {
+      toast.error('Requested quantity exceeds available stock.');
       return;
     }
     addToCart(product, selectedSize, quantity);
-    setNotification(`${product.name} added to cart!`);
-    setTimeout(() => setNotification(''), 3000);
   };
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <button
+        onClick={() => navigate(-1)}
+        className="mb-6 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600"
+      >
+        &larr; Back
+      </button>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
         <div>
-          <img src={product.image} alt={product.name} className="w-full h-auto object-cover rounded-lg shadow-lg" />
+          <img src={product.image || 'https://placehold.co/600x800/0a0a0a/ffffff?text=Product'} alt={product.name} className="w-full h-auto object-cover rounded-lg shadow-lg" />
         </div>
         <div>
           <h1 className="text-3xl md:text-4xl font-serif font-bold text-gray-900 dark:text-white">{product.name}</h1>
@@ -462,7 +659,7 @@ const ProductPage = ({ id }) => {
           <div className="mt-8">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-200">Size</h3>
             <div className="flex flex-wrap gap-3 mt-4">
-              {product.sizes.map(size => (
+              {(product.sizes || []).map(size => (
                 <button
                   key={size}
                   onClick={() => setSelectedSize(size)}
@@ -477,20 +674,24 @@ const ProductPage = ({ id }) => {
               ))}
             </div>
           </div>
+          <div className="mt-8">
+            <h3 className="text-sm font-medium text-gray-900 dark:text-gray-200">Quantity</h3>
+            <div className="flex items-center border border-gray-300 dark:border-gray-700 rounded-md w-32 mt-4">
+              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="px-3 py-2">-</button>
+              <span className="px-3 text-gray-800 dark:text-gray-200">{quantity}</span>
+              <button onClick={() => setQuantity(quantity + 1)} className="px-3 py-2">+</button>
+            </div>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Stock: {product.stock}</p>
+          </div>
           <div className="mt-8 flex items-center space-x-4">
             <button onClick={handleAddToCart} className="flex-1 px-8 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
               Add to Cart
             </button>
           </div>
-          {notification && (
-            <div className="mt-4 text-center text-sm font-medium text-green-600 dark:text-green-400 transition-opacity duration-300">
-              {notification}
-            </div>
-          )}
           <div className="mt-10">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-200">Details</h3>
             <ul className="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-400 list-disc list-inside">
-              {product.details.map(detail => <li key={detail}>{detail}</li>)}
+              {(product.details || []).map(detail => <li key={detail}>{detail}</li>)}
             </ul>
           </div>
         </div>
@@ -501,7 +702,7 @@ const ProductPage = ({ id }) => {
 
 const CartPage = () => {
   const { cartItems, removeFromCart, updateQuantity, cartTotal } = useContext(CartContext);
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
@@ -509,7 +710,7 @@ const CartPage = () => {
       {cartItems.length === 0 ? (
         <div className="text-center">
           <p className="text-gray-600 dark:text-gray-400">Your cart is empty.</p>
-          <button onClick={() => navigate('shop')} className="mt-6 px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
+          <button onClick={() => navigate('/shop')} className="mt-6 px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
             Continue Shopping
           </button>
         </div>
@@ -520,7 +721,7 @@ const CartPage = () => {
               {cartItems.map(item => (
                 <li key={`${item.id}-${item.size}`} className="flex py-6">
                   <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
-                    <img src={item.image} alt={item.name} className="h-full w-full object-cover object-center" />
+                    <img src={item.image || 'https://placehold.co/100x100/0a0a0a/ffffff?text=Product'} alt={item.name} className="h-full w-full object-cover object-center" />
                   </div>
                   <div className="ml-4 flex flex-1 flex-col">
                     <div>
@@ -556,7 +757,7 @@ const CartPage = () => {
               </div>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Shipping and taxes calculated at checkout.</p>
               <div className="mt-6">
-                <button onClick={() => navigate('checkout')} className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
+                <button onClick={() => navigate('/checkout')} className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
                   Checkout
                 </button>
               </div>
@@ -570,26 +771,16 @@ const CartPage = () => {
 
 const CheckoutPage = () => {
   const { cartItems, cartTotal, clearCart } = useContext(CartContext);
-  const { navigate, user, loading } = useContext(AuthContext);
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    fullName: '',
+    fullName: user?.name || '',
     email: user?.email || '',
-    address: '',
+    address: user?.address || '',
     city: '',
     postalCode: '',
-    cardNumber: '',
-    expiry: '',
-    cvc: ''
   });
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate('login');
-    }
-  }, [user, loading, navigate]);
-
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  const [submitLoading, setSubmitLoading] = useState(false);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -597,8 +788,41 @@ const CheckoutPage = () => {
 
   const handlePlaceOrder = async (e) => {
     e.preventDefault();
+    setSubmitLoading(true);
+
+    // Validate form fields
+    if (!formData.fullName || !formData.email || !formData.address || !formData.city || !formData.postalCode) {
+      toast.error('Please fill in all required fields.');
+      setSubmitLoading(false);
+      return;
+    }
+
+    if (!cartItems.length) {
+      toast.error('Cart is empty. Please add items before placing an order.');
+      setSubmitLoading(false);
+      return;
+    }
+
+    // Validate stock for each item
     try {
+      for (const item of cartItems) {
+        const productDoc = await getDoc(doc(db, 'products', item.id));
+        if (!productDoc.exists()) {
+          toast.error(`Product ${item.name} no longer exists.`);
+          setSubmitLoading(false);
+          return;
+        }
+        const productData = productDoc.data();
+        if (item.quantity > productData.stock) {
+          toast.error(`Requested quantity for ${item.name} exceeds available stock (${productData.stock}).`);
+          setSubmitLoading(false);
+          return;
+        }
+      }
+
+      // Place order
       const orderRef = await addDoc(collection(db, `users/${user.uid}/orders`), {
+        id: doc(collection(db, 'orders')).id,
         items: cartItems.map(item => ({
           id: item.id,
           name: item.name,
@@ -610,8 +834,10 @@ const CheckoutPage = () => {
         status: 'Processing',
         date: new Date().toISOString(),
         customerEmail: user.email,
-        shipping: formData
+        shipping: formData,
+        paymentMethod: 'Cash on Delivery'
       });
+
       await addDoc(collection(db, 'orders'), {
         id: orderRef.id,
         customerEmail: user.email,
@@ -625,119 +851,165 @@ const CheckoutPage = () => {
         total: cartTotal,
         status: 'Processing',
         date: new Date().toISOString(),
-        shipping: formData
+        shipping: formData,
+        paymentMethod: 'Cash on Delivery'
       });
+
+      console.log('Order created:', { id: orderRef.id, customerEmail: user.email, total: cartTotal });
       clearCart();
-      alert('Thank you for your order! Your purchase was successful.');
-      navigate('home');
+      toast.success('Thank you for your order! Your purchase was successful.');
+      navigate('/profile');
     } catch (error) {
-      console.error('Error placing order:', error);
-      setError('Failed to place order. Please try again.');
+      console.error('Error placing order:', {
+        code: error.code,
+        message: error.message,
+        details: error.details || 'No additional details'
+      });
+      let errorMessage = 'Failed to place order. Please try again.';
+      if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Check Firebase rules or authentication status.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Firestore is currently unavailable. Please try again later.';
+      }
+      toast.error(errorMessage);
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
       <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Checkout</h1>
-      {error && <p className="text-center text-red-600 mb-6">{error}</p>}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        <div>
-          <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Shipping Information</h2>
-          <form className="space-y-4">
-            <input name="fullName" value={formData.fullName} onChange={handleInputChange} type="text" placeholder="Full Name" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-            <input name="email" value={formData.email} onChange={handleInputChange} type="email" placeholder="Email" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-            <input name="address" value={formData.address} onChange={handleInputChange} type="text" placeholder="Address" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-            <div className="flex space-x-4">
-              <input name="city" value={formData.city} onChange={handleInputChange} type="text" placeholder="City" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-              <input name="postalCode" value={formData.postalCode} onChange={handleInputChange} type="text" placeholder="Postal Code" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-            </div>
-          </form>
-          <h2 className="text-xl font-semibold mt-10 mb-6 text-gray-900 dark:text-white">Payment Details</h2>
-          <form className="space-y-4">
-            <input name="cardNumber" value={formData.cardNumber} onChange={handleInputChange} type="text" placeholder="Card Number" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-            <div className="flex space-x-4">
-              <input name="expiry" value={formData.expiry} onChange={handleInputChange} type="text" placeholder="MM / YY" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-              <input name="cvc" value={formData.cvc} onChange={handleInputChange} type="text" placeholder="CVC" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
-            </div>
-          </form>
+      {submitLoading ? (
+        <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+          <div className="loader"></div>
         </div>
-        <div className="bg-gray-50 dark:bg-gray-900/50 p-8 rounded-lg">
-          <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Your Order</h2>
-          <ul className="space-y-4">
-            {cartItems.map(item => (
-              <li key={`${item.id}-${item.size}`} className="flex justify-between items-center">
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-white">{item.name} <span className="text-sm text-gray-500 dark:text-gray-400">x {item.quantity}</span></p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Size: {item.size}</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+          <div>
+            <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Shipping Information</h2>
+            <form className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Full Name *</label>
+                <input name="fullName" value={formData.fullName} onChange={handleInputChange} type="text" placeholder="Full Name" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Email *</label>
+                <input name="email" value={formData.email} onChange={handleInputChange} type="email" placeholder="Email" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Address *</label>
+                <input name="address" value={formData.address} onChange={handleInputChange} type="text" placeholder="Address" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+              </div>
+              <div className="flex space-x-4">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-gray-900 dark:text-gray-200">City *</label>
+                  <input name="city" value={formData.city} onChange={handleInputChange} type="text" placeholder="City" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
                 </div>
-                <p className="text-gray-900 dark:text-white">PKR {(item.price * item.quantity).toLocaleString()}</p>
-              </li>
-            ))}
-          </ul>
-          <div className="border-t border-gray-200 dark:border-gray-700 my-6"></div>
-          <div className="flex justify-between font-semibold text-lg text-gray-900 dark:text-white">
-            <p>Total</p>
-            <p>PKR {cartTotal.toLocaleString()}</p>
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Postal Code *</label>
+                  <input name="postalCode" value={formData.postalCode} onChange={handleInputChange} type="text" placeholder="Postal Code" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+                </div>
+              </div>
+            </form>
+            <h2 className="text-xl font-semibold mt-10 mb-6 text-gray-900 dark:text-white">Payment Method</h2>
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-md">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-200">Cash on Delivery</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Pay when you receive your order.</p>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Online/Card payment options will be added soon.</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Contact us on WhatsApp for order confirmation or support: [WhatsApp number to be added later].</p>
+            </div>
           </div>
-          <button onClick={handlePlaceOrder} className="mt-8 w-full px-6 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
-            Place Order
-          </button>
+          <div className="bg-gray-50 dark:bg-gray-900/50 p-8 rounded-lg">
+            <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Your Order</h2>
+            <ul className="space-y-4">
+              {cartItems.map(item => (
+                <li key={`${item.id}-${item.size}`} className="flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">{item.name} <span className="text-sm text-gray-500 dark:text-gray-400">x {item.quantity}</span></p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Size: {item.size}</p>
+                  </div>
+                  <p className="text-gray-900 dark:text-white">PKR {(item.price * item.quantity).toLocaleString()}</p>
+                </li>
+              ))}
+            </ul>
+            <div className="border-t border-gray-200 dark:border-gray-700 my-6"></div>
+            <div className="flex justify-between font-semibold text-lg text-gray-900 dark:text-white">
+              <p>Total</p>
+              <p>PKR {cartTotal.toLocaleString()}</p>
+            </div>
+            <button onClick={handlePlaceOrder} disabled={submitLoading} className={`mt-8 w-full px-6 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md ${submitLoading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              {submitLoading ? 'Processing...' : 'Place Order'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
 
 const LoginPage = () => {
   const { login, signup, loginWithGoogle } = useContext(AuthContext);
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isLoginView, setIsLoginView] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [submitLoading, setSubmitLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    try {
-      if (isLoginView) {
-        if (await login(email, password)) {
-          navigate('profile');
-        } else {
-          setError('Invalid email or password.');
-        }
-      } else {
-        if (await signup(name, email, password)) {
-          navigate('profile');
-        } else {
-          setError('Failed to create account. Try a different email.');
-        }
+    setSubmitLoading(true);
+    if (isLoginView) {
+      const success = await login(email, password);
+      if (success) {
+        const redirect = location.state?.redirect || '/';
+        console.log('Navigating after login to:', redirect);
+        navigate(redirect);
       }
-    } catch (error) {
-      setError(error.message);
-      console.error('Auth error:', error.message);
+    } else {
+      if (password !== confirmPassword) {
+        toast.error('Passwords do not match.');
+        setSubmitLoading(false);
+        return;
+      }
+      const success = await signup(name, email, password);
+      if (success) {
+        const redirect = location.state?.redirect || '/';
+        console.log('Navigating after signup to:', redirect);
+        navigate(redirect);
+      }
     }
+    setSubmitLoading(false);
   };
 
   const handleGoogleLogin = async () => {
-    try {
-      if (await loginWithGoogle()) {
-        navigate('profile');
-      } else {
-        setError('Google login failed.');
-      }
-    } catch (error) {
-      setError(error.message);
-      console.error('Google login error:', error.message);
+    setSubmitLoading(true);
+    const success = await loginWithGoogle();
+    if (success) {
+      const redirect = location.state?.redirect || '/';
+      console.log('Navigating after Google login to:', redirect);
+      navigate(redirect);
     }
+    setSubmitLoading(false);
   };
+
+  if (submitLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-[70vh] py-12 bg-gray-100 dark:bg-gray-900">
       <div className="w-full max-w-md p-8 space-y-8 bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg">
         <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white">{isLoginView ? 'Login' : 'Sign Up'}</h1>
-        {error && <p className="text-center text-red-600">{error}</p>}
         <form onSubmit={handleSubmit} className="space-y-6">
           {!isLoginView && (
             <input
@@ -765,16 +1037,28 @@ const LoginPage = () => {
             required
             className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
           />
+          {!isLoginView && (
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="Confirm Password"
+              required
+              className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+            />
+          )}
           <button
             type="submit"
-            className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md"
+            disabled={submitLoading}
+            className={`w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md ${submitLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isLoginView ? 'Login' : 'Create Account'}
           </button>
         </form>
         <button
           onClick={handleGoogleLogin}
-          className="w-full px-6 py-3 bg-gray-700 text-white uppercase tracking-widest text-sm font-semibold hover:bg-gray-800 transition-colors duration-300 rounded-md"
+          disabled={submitLoading}
+          className={`w-full px-6 py-3 bg-gray-700 text-white uppercase tracking-widest text-sm font-semibold hover:bg-gray-800 transition-colors duration-300 rounded-md ${submitLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           Login with Google
         </button>
@@ -790,16 +1074,98 @@ const LoginPage = () => {
 };
 
 const ProfilePage = () => {
-  const { user, logout, loading } = useContext(AuthContext);
-  const { navigate } = useContext(PageContext);
+  const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({
+    name: user?.name || '',
+    address: user?.address || '',
+    image: user?.image || ''
+  });
+  const [imageFile, setImageFile] = useState(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [orders, setOrders] = useState(user?.orders || []);
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate('login');
+    if (user) {
+      const unsubscribe = onSnapshot(collection(db, `users/${user.uid}/orders`), (snapshot) => {
+        const orderList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log('Orders fetched:', orderList.length);
+        setOrders(orderList);
+      }, (error) => {
+        console.error('Error fetching orders:', error.code, error.message);
+        toast.error('Failed to load orders.');
+      });
+      return () => unsubscribe();
     }
-  }, [user, loading, navigate]);
+  }, [user]);
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  const handleInputChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleImageChange = (e) => {
+    if (e.target.files[0]) {
+      setImageFile(e.target.files[0]);
+      setFormData({ ...formData, image: URL.createObjectURL(e.target.files[0]) });
+    }
+  };
+
+  const uploadImageToImgBB = async (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      console.log('Uploading profile image to ImgBB...');
+      const response = await fetch(`https://api.imgbb.com/1/upload?key=${import.meta.env.VITE_IMGBB_API_KEY}`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      console.log('ImgBB response:', data);
+      if (data.success) {
+        return data.data.url;
+      } else {
+        throw new Error(data.error?.message || 'Image upload failed');
+      }
+    } catch (error) {
+      console.error('Error uploading image to ImgBB:', error.message);
+      throw error;
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitLoading(true);
+    try {
+      let imageUrl = formData.image;
+      if (imageFile) {
+        imageUrl = await uploadImageToImgBB(imageFile);
+      }
+      await updateProfile(auth.currentUser, { displayName: formData.name });
+      await setDoc(doc(db, 'users', user.uid), {
+        id: user.uid,
+        name: formData.name,
+        email: user.email,
+        address: formData.address,
+        image: imageUrl,
+        joined: user.joined
+      }, { merge: true });
+      console.log('Profile updated:', { name: formData.name, address: formData.address, image: imageUrl });
+      toast.success('Profile updated successfully!');
+    } catch (error) {
+      console.error('Error updating profile:', error.code, error.message);
+      toast.error(`Failed to update profile: ${error.message}`);
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  if (submitLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
@@ -807,9 +1173,59 @@ const ProfilePage = () => {
       <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg p-8">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Details</h2>
-          <p className="text-gray-800 dark:text-gray-200"><strong>Name:</strong> {user.name}</p>
-          <p className="text-gray-800 dark:text-gray-200"><strong>Email:</strong> {user.email}</p>
-          <p className="text-gray-800 dark:text-gray-200"><strong>Address:</strong> {user.address}</p>
+          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+            <div>
+              <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Name</label>
+              <input
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                placeholder="Full Name"
+                required
+                className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Email</label>
+              <input
+                type="email"
+                value={user.email}
+                disabled
+                className="w-full p-3 border rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Address</label>
+              <input
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                placeholder="Address"
+                className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-900 dark:text-gray-200">Profile Image</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200"
+              />
+              {formData.image ? (
+                <img src={formData.image} alt="Profile" className="mt-2 h-20 w-20 object-cover rounded-full" />
+              ) : (
+                <div className="mt-2 h-20 w-20 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400">No Image</div>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={submitLoading}
+              className={`w-full sm:w-auto px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md ${submitLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {submitLoading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </form>
         </div>
         <div>
           <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Order History</h2>
@@ -824,8 +1240,8 @@ const ProfilePage = () => {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                {user.orders.length > 0 ? (
-                  user.orders.map(order => (
+                {orders.length > 0 ? (
+                  orders.map(order => (
                     <tr key={order.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-800 dark:text-gray-200">{order.id}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-800 dark:text-gray-200">{order.date.split('T')[0]}</td>
@@ -845,7 +1261,7 @@ const ProfilePage = () => {
         <button
           onClick={() => {
             logout();
-            navigate('home');
+            navigate('/');
           }}
           className="mt-8 w-full sm:w-auto px-6 py-3 bg-red-700 text-white uppercase tracking-widest text-sm font-semibold hover:bg-red-800 transition-colors duration-300 rounded-md"
         >
@@ -861,17 +1277,24 @@ const Navbar = () => {
   const { isDarkMode, toggleTheme } = useContext(ThemeContext);
   const { user, loading } = useContext(AuthContext);
   const { cartCount } = useContext(CartContext);
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const navLinks = [
-    { name: 'Home', page: 'home' },
-    { name: 'Shop', page: 'shop' },
-    { name: 'New Arrivals', page: 'new-arrivals' },
-    { name: 'Collections', page: 'collections' },
+    { name: 'Home', path: '/' },
+    { name: 'Shop', path: '/shop' },
+    { name: 'New Arrivals', path: '/new-arrivals' },
+    { name: 'Categories', path: '/categories' },
+    { name: 'Collections', path: '/collections' },
   ];
 
-  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh] bg-gray-100 dark:bg-gray-900">
+        <div className="loader"></div>
+      </div>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-sm shadow-sm">
@@ -883,7 +1306,7 @@ const Navbar = () => {
             </button>
           </div>
           <div className="flex-shrink-0">
-            <a onClick={() => navigate('home')} className="text-2xl font-serif font-bold tracking-widest text-gray-900 dark:text-white cursor-pointer">
+            <a onClick={() => navigate('/')} className="text-2xl font-serif font-bold tracking-widest text-gray-900 dark:text-white cursor-pointer">
               LUXE
             </a>
           </div>
@@ -891,7 +1314,7 @@ const Navbar = () => {
             {navLinks.map(link => (
               <a
                 key={link.name}
-                onClick={() => navigate(link.page)}
+                onClick={() => navigate(link.path)}
                 className="text-sm font-medium uppercase tracking-wider text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300 cursor-pointer"
               >
                 {link.name}
@@ -902,10 +1325,10 @@ const Navbar = () => {
             <button onClick={toggleTheme} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
               {isDarkMode ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
             </button>
-            <button onClick={() => navigate(user ? 'profile' : 'login')} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
+            <button onClick={() => navigate(user ? '/profile' : '/login')} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
               <UserIcon className="h-6 w-6" />
             </button>
-            <button onClick={() => navigate('cart')} className="relative text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
+            <button onClick={() => navigate('/cart')} className="relative text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
               <CartIcon className="h-6 w-6" />
               {cartCount > 0 && (
                 <span className="absolute -top-2 -right-2 flex items-center justify-center h-5 w-5 bg-amber-700 text-white text-xs rounded-full">{cartCount}</span>
@@ -923,7 +1346,7 @@ const Navbar = () => {
             {navLinks.map(link => (
               <a
                 key={link.name}
-                onClick={() => { navigate(link.page); setIsMenuOpen(false); }}
+                onClick={() => { navigate(link.path); setIsMenuOpen(false); }}
                 className="text-lg font-medium uppercase tracking-wider text-gray-800 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-600 cursor-pointer"
               >
                 {link.name}
@@ -947,9 +1370,9 @@ const Footer = () => (
         <div>
           <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Shop</h4>
           <ul className="mt-4 space-y-2 text-sm">
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">New Arrivals</a></li>
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Collections</a></li>
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Outerwear</a></li>
+            <li><a href="/new-arrivals" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">New Arrivals</a></li>
+            <li><a href="/collections" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Collections</a></li>
+            <li><a href="/categories" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Categories</a></li>
           </ul>
         </div>
         <div>
@@ -965,7 +1388,7 @@ const Footer = () => (
           <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">Subscribe for exclusive updates.</p>
           <div className="mt-4 flex">
             <input type="email" placeholder="Your email" className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-l-md focus:outline-none focus:ring-2 focus:ring-amber-700 text-sm text-gray-800 dark:text-gray-200" />
-            <button type="button" className="px-4 py-2 bg-amber-800 text-white rounded-r-md hover:bg-amber-900 transition-colors">
+            <button type="button" onClick={() => toast.info('Newsletter subscription not implemented.')} className="px-4 py-2 bg-amber-800 text-white rounded-r-md hover:bg-amber-900 transition-colors">
               &rarr;
             </button>
           </div>
@@ -980,38 +1403,26 @@ const Footer = () => (
 
 // --- Main App Component ---
 function App() {
-  const { page } = useContext(PageContext);
-
-  const renderPage = () => {
-    switch (page.name) {
-      case 'home':
-        return <HomePage />;
-      case 'shop':
-        return <ShopPage />;
-      case 'new-arrivals':
-        return <NewArrivalsPage />;
-      case 'collections':
-        return <CollectionsPage />;
-      case 'product':
-        return <ProductPage id={page.data.id} />;
-      case 'cart':
-        return <CartPage />;
-      case 'checkout':
-        return <CheckoutPage />;
-      case 'login':
-        return <LoginPage />;
-      case 'profile':
-        return <ProfilePage />;
-      default:
-        return <HomePage />;
-    }
-  };
-
   return (
     <div className="bg-white dark:bg-black text-gray-800 dark:text-gray-200 font-sans transition-colors duration-300 min-h-screen">
+      <style>{spinnerStyles}</style>
       <Navbar />
-      <main>{renderPage()}</main>
+      <main>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/shop" element={<ShopPage />} />
+          <Route path="/new-arrivals" element={<NewArrivalsPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/collections" element={<CollectionsPage />} />
+          <Route path="/product/:id" element={<ProductPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        </Routes>
+      </main>
       <Footer />
+      <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
 }
@@ -1019,14 +1430,14 @@ function App() {
 // --- Root Component ---
 export default function Root() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <CartProvider>
-          <PageProvider>
+    <Router>
+      <ThemeProvider>
+        <AuthProvider>
+          <CartProvider>
             <App />
-          </PageProvider>
-        </CartProvider>
-      </AuthProvider>
-    </ThemeProvider>
+          </CartProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </Router>
   );
 }

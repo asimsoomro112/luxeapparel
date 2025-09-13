@@ -1,125 +1,72 @@
 import React, { useState, useEffect, useContext, createContext } from 'react';
-
-// --- MOCK DATA ---
-const mockProducts = [
-  {
-    id: 1,
-    name: 'Opulent Silk Blouse',
-    category: 'Tops',
-    price: 18500,
-    sizes: ['S', 'M', 'L', 'XL'],
-    description: 'Crafted from the finest mulberry silk, this blouse features a fluid drape and a subtle, elegant sheen. A timeless piece for any wardrobe.',
-    details: ['100% Mulberry Silk', 'Mother of Pearl Buttons', 'Dry Clean Only', 'Made in Italy'],
-    image: 'https://placehold.co/800x1200/1a1a1a/ffffff?text=Luxe+Blouse'
-  },
-  {
-    id: 2,
-    name: 'Prestige Wool Trousers',
-    category: 'Bottoms',
-    price: 27000,
-    sizes: ['28', '30', '32', '34', '36'],
-    description: 'Tailored from premium Italian wool, these trousers offer a flawless fit and exceptional comfort. The sharp crease and modern silhouette exude sophistication.',
-    details: ['100% Italian Wool', 'Slim Fit', 'Horn Buttons', 'Unfinished Hem'],
-    image: 'https://placehold.co/800x1200/f0f0f0/000000?text=Luxe+Trousers'
-  },
-  {
-    id: 3,
-    name: 'Elysian Cashmere Coat',
-    category: 'Outerwear',
-    price: 85000,
-    sizes: ['S', 'M', 'L'],
-    description: 'An exquisitely soft coat made from pure Mongolian cashmere. Its minimalist design and luxurious feel make it the ultimate statement of understated elegance.',
-    details: ['100% Mongolian Cashmere', 'Hand-stitched Detailing', 'Satin Lining', 'Oversized Fit'],
-    image: 'https://placehold.co/800x1200/333333/ffffff?text=Luxe+Coat'
-  },
-  {
-    id: 4,
-    name: 'Artisan Leather Loafers',
-    category: 'Footwear',
-    price: 35000,
-    sizes: ['8', '9', '10', '11', '12'],
-    description: 'Handcrafted by master artisans from supple calfskin leather. These loafers feature a classic silhouette with a modern twist, ensuring both comfort and style.',
-    details: ['100% Calfskin Leather', 'Blake Stitch Construction', 'Leather Sole', 'Hand-burnished Finish'],
-    image: 'https://placehold.co/800x1200/f5f5f5/000000?text=Luxe+Loafers'
-  },
-  {
-    id: 5,
-    name: 'Ascot Linen Shirt',
-    category: 'Tops',
-    price: 15000,
-    sizes: ['S', 'M', 'L', 'XL'],
-    description: 'A breathable and effortlessly chic shirt woven from fine European linen. Perfect for warm climates and sophisticated layering.',
-    details: ['100% European Linen', 'Regular Fit', 'Trochus Shell Buttons', 'Garment Washed for Softness'],
-    image: 'https://placehold.co/800x1200/e0e0e0/000000?text=Luxe+Shirt'
-  },
-  {
-    id: 6,
-    name: 'Riviera Denim Jeans',
-    category: 'Bottoms',
-    price: 22000,
-    sizes: ['28', '30', '32', '34', '36'],
-    description: 'Elevated denim crafted from premium Japanese selvedge. The tailored cut and deep indigo wash offer a refined take on a classic staple.',
-    details: ['100% Japanese Selvedge Denim', 'Slim Tapered Fit', 'Copper Rivets', 'Chain-stitched Hem'],
-    image: 'https://placehold.co/800x1200/2a2a2a/ffffff?text=Luxe+Denim'
-  },
-];
+import { db, auth, googleProvider } from './firebase';
+import { collection, getDocs, addDoc, setDoc, doc, query, orderBy, limit, where } from 'firebase/firestore';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 
 // --- ICONS ---
 const SunIcon = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
   </svg>
 );
 
 const MoonIcon = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
   </svg>
 );
 
 const CartIcon = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
   </svg>
 );
 
 const UserIcon = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
   </svg>
 );
 
 const MenuIcon = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" />
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
   </svg>
 );
 
 const CloseIcon = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
 
-// --- CONTEXTS for Global State Management ---
+// --- CONTEXTS ---
 const ThemeContext = createContext();
 const CartContext = createContext();
 const AuthContext = createContext();
-const PageContext = createContext();
 
 // --- PROVIDERS ---
 const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
 
   useEffect(() => {
+    const root = document.documentElement;
     if (isDarkMode) {
-      document.documentElement.classList.add('dark');
+      root.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
-      document.documentElement.classList.remove('dark');
+      root.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
 
-  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const toggleTheme = () => {
+    setIsDarkMode(prev => !prev);
+  };
 
   return <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>{children}</ThemeContext.Provider>;
 };
@@ -174,56 +121,107 @@ const CartProvider = ({ children }) => {
 };
 
 const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); // null if logged out, user object if logged in
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Mock user object
-  const mockUser = {
-    name: 'Alex Mercer',
-    email: 'alex.mercer@example.com',
-    address: '123 Elysian Fields, Capital City',
-    orders: [
-      { id: 'ORD123', date: '2024-08-15', total: 45500, status: 'Shipped' },
-      { id: 'ORD124', date: '2024-08-20', total: 85000, status: 'Delivered' },
-    ]
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      try {
+        if (currentUser) {
+          const basicUser = {
+            uid: currentUser.uid,
+            name: currentUser.displayName || currentUser.email.split('@')[0],
+            email: currentUser.email,
+            address: 'Not set',
+            orders: []
+          };
+          setUser(basicUser);
+
+          // Async operations that don't block user setting
+          setDoc(doc(db, 'users', currentUser.uid), {
+            name: currentUser.displayName || currentUser.email.split('@')[0],
+            email: currentUser.email,
+            address: currentUser.address || 'Not set',
+            joined: new Date().toISOString().split('T')[0]
+          }, { merge: true }).catch(error => {
+            console.error('Error setting user doc:', error);
+          });
+
+          getDocs(collection(db, `users/${currentUser.uid}/orders`)).then(ordersSnapshot => {
+            const orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setUser(prev => ({ ...prev, orders }));
+          }).catch(error => {
+            console.error('Error fetching orders:', error);
+            setUser(prev => ({ ...prev, orders: [] }));
+          });
+        } else {
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('Auth state change error:', error);
+      } finally {
+        setLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const signup = async (name, email, password) => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        name,
+        email,
+        address: 'Not set',
+        joined: new Date().toISOString().split('T')[0]
+      });
+      return true;
+    } catch (error) {
+      console.error('Signup error:', error.message);
+      return false;
+    }
   };
 
-  const login = (email, password) => {
-    console.log(`Logging in with ${email} and ${password}`);
-    setUser(mockUser);
+  const login = async (email, password) => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      return true;
+    } catch (error) {
+      console.error('Login error:', error.message);
+      return false;
+    }
   };
 
-  const logout = () => {
-    setUser(null);
+  const loginWithGoogle = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      return true;
+    } catch (error) {
+      console.error('Google login error:', error.message);
+      return false;
+    }
   };
 
-  const signup = (name, email, password) => {
-    console.log(`Signing up with ${name}, ${email}, ${password}`);
-    setUser(mockUser); // auto-login after signup
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout, signup }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, loginWithGoogle, signup, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-const PageProvider = ({ children }) => {
-  const [page, setPage] = useState({ name: 'home', data: null });
-
-  const navigate = (name, data = null) => {
-    setPage({ name, data });
-    window.scrollTo(0, 0);
-  };
-
-  return <PageContext.Provider value={{ page, navigate }}>{children}</PageContext.Provider>;
-};
-
 // --- REUSABLE UI COMPONENTS ---
 const ProductCard = ({ product }) => {
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
   return (
-    <div onClick={() => navigate('product', { id: product.id })} className="group cursor-pointer">
+    <div onClick={() => navigate(`/product/${product.id}`)} className="group cursor-pointer">
       <div className="overflow-hidden bg-gray-100 dark:bg-gray-800/50 rounded-lg">
         <img
           src={product.image}
@@ -243,177 +241,268 @@ const ProductCard = ({ product }) => {
   );
 };
 
-// --- LAYOUT COMPONENTS ---
-const Navbar = () => {
-  const { isDarkMode, toggleTheme } = useContext(ThemeContext);
-  const { user } = useContext(AuthContext);
-  const { cartCount } = useContext(CartContext);
-  const { navigate } = useContext(PageContext);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+// --- PAGE COMPONENTS ---
+const HomePage = () => {
+  const navigate = useNavigate();
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const navLinks = [
-    { name: 'Home', page: 'home' },
-    { name: 'New Arrivals', page: 'home' },
-    { name: 'Collections', page: 'home' },
-    { name: 'About', page: 'home' },
-  ];
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'products'));
+        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productList);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching products:', error);
+        setError('Failed to load products. Please try again.');
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, []);
+
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
 
   return (
-    <header className="sticky top-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-sm shadow-sm">
-      <nav className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
-          {/* Mobile Menu Button */}
-          <div className="md:hidden">
-            <button onClick={() => setIsMenuOpen(true)} className="text-gray-800 dark:text-gray-200">
-              <MenuIcon className="h-6 w-6" />
-            </button>
-          </div>
-
-          {/* Logo */}
-          <div className="flex-shrink-0">
-            <a onClick={() => navigate('home')} className="text-2xl font-serif font-bold tracking-widest text-gray-900 dark:text-white cursor-pointer">
-              LUXE
-            </a>
-          </div>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex md:items-center md:space-x-8">
-            {navLinks.map(link => (
-              <a key={link.name} onClick={() => navigate(link.page)} className="text-sm font-medium uppercase tracking-wider text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300 cursor-pointer">
-                {link.name}
-              </a>
-            ))}
-          </div>
-
-          {/* Icons */}
-          <div className="flex items-center space-x-4">
-            <button onClick={toggleTheme} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
-              {isDarkMode ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
-            </button>
-            <button onClick={() => navigate(user ? 'profile' : 'login')} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
-              <UserIcon className="h-6 w-6" />
-            </button>
-            <button onClick={() => navigate('cart')} className="relative text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
-              <CartIcon className="h-6 w-6" />
-              {cartCount > 0 && (
-                <span className="absolute -top-2 -right-2 flex items-center justify-center h-5 w-5 bg-amber-700 text-white text-xs rounded-full">{cartCount}</span>
-              )}
-            </button>
-          </div>
-        </div>
-      </nav>
-      {/* Mobile Menu Overlay */}
-      <div className={`fixed inset-0 z-50 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-300 ease-in-out md:hidden`}>
-        <div className="fixed inset-0 bg-black/50" onClick={() => setIsMenuOpen(false)}></div>
-        <div className="relative w-4/5 max-w-xs h-full bg-white dark:bg-black p-6">
-          <button onClick={() => setIsMenuOpen(false)} className="absolute top-5 right-5 text-gray-600 dark:text-gray-300">
-            <CloseIcon className="h-6 w-6" />
+    <>
+      <section className="relative h-[70vh] md:h-[90vh] bg-cover bg-center flex items-center" style={{ backgroundImage: "url('https://placehold.co/1920x1080/0a0a0a/ffffff?text=The+Art+of+Style')" }}>
+        <div className="absolute inset-0 bg-black opacity-40"></div>
+        <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
+          <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-wider leading-tight">The Autumn Collection</h1>
+          <p className="mt-4 text-lg md:text-xl max-w-2xl mx-auto">Discover pieces that blend timeless design with contemporary sensibilities.</p>
+          <button onClick={() => navigate('/shop')} className="mt-8 px-8 py-3 bg-white/20 backdrop-blur-sm border border-white text-white uppercase tracking-widest text-sm font-semibold hover:bg-white hover:text-black transition-colors duration-300 rounded-sm">
+            Explore Now
           </button>
-          <div className="mt-16 flex flex-col space-y-6">
-            {navLinks.map(link => (
-              <a key={link.name} onClick={() => { navigate(link.page); setIsMenuOpen(false); }} className="text-lg font-medium uppercase tracking-wider text-gray-800 dark:text-gray-200 cursor-pointer">
-                {link.name}
-              </a>
+        </div>
+      </section>
+      <section className="py-16 sm:py-24">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Featured Pieces</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+            {products.slice(0, 3).map(product => (
+              <ProductCard key={product.id} product={product} />
             ))}
           </div>
         </div>
-      </div>
-    </header>
+      </section>
+    </>
   );
 };
 
-const Footer = () => (
-  <footer className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
-    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        <div>
-          <h3 className="text-lg font-serif font-semibold text-gray-900 dark:text-white tracking-wider">LUXE</h3>
-          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">Timeless elegance, modern luxury. Crafted for the discerning individual.</p>
-        </div>
-        <div>
-          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Shop</h4>
-          <ul className="mt-4 space-y-2 text-sm">
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">New Arrivals</a></li>
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Collections</a></li>
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Outerwear</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Support</h4>
-          <ul className="mt-4 space-y-2 text-sm">
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Contact Us</a></li>
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">FAQ</a></li>
-            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Shipping & Returns</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Newsletter</h4>
-          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">Subscribe for exclusive updates.</p>
-          <form className="mt-4 flex">
-            <input type="email" placeholder="Your email" className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-l-md focus:outline-none focus:ring-2 focus:ring-amber-700 text-sm" />
-            <button type="submit" className="px-4 py-2 bg-amber-800 text-white rounded-r-md hover:bg-amber-900 transition-colors">
-              &rarr;
-            </button>
-          </form>
-        </div>
-      </div>
-      <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-800 text-center text-sm text-gray-500 dark:text-gray-400">
-        <p>&copy; {new Date().getFullYear()} LUXE Apparel. All Rights Reserved.</p>
+const ShopPage = () => {
+  const location = useLocation();
+  const category = new URLSearchParams(location.search).get('category');
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        let q = collection(db, 'products');
+        if (category) {
+          q = query(collection(db, 'products'), where('category', '==', category));
+        }
+        const querySnapshot = await getDocs(q);
+        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productList);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching products:', error);
+        setError('Failed to load products. Please try again.');
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, [category]);
+
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+
+  return (
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Shop {category ? ` - ${category}` : 'All'}</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+        {products.map(product => (
+          <ProductCard key={product.id} product={product} />
+        ))}
       </div>
     </div>
-  </footer>
-);
+  );
+};
 
-// --- PAGE COMPONENTS ---
-const HomePage = () => (
-  <>
-    {/* Hero Section */}
-    <section className="relative h-[70vh] md:h-[90vh] bg-cover bg-center flex items-center" style={{ backgroundImage: "url('https://placehold.co/1920x1080/0a0a0a/ffffff?text=The+Art+of+Style')" }}>
-      <div className="absolute inset-0 bg-black opacity-40"></div>
-      <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
-        <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-wider leading-tight">The Autumn Collection</h1>
-        <p className="mt-4 text-lg md:text-xl max-w-2xl mx-auto">Discover pieces that blend timeless design with contemporary sensibilities.</p>
-        <button className="mt-8 px-8 py-3 bg-white/20 backdrop-blur-sm border border-white text-white uppercase tracking-widest text-sm font-semibold hover:bg-white hover:text-black transition-colors duration-300 rounded-sm">
-          Explore Now
-        </button>
-      </div>
-    </section>
+const NewArrivalsPage = () => {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-    {/* Product Grid */}
-    <section className="py-16 sm:py-24">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Featured Pieces</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
-          {mockProducts.slice(0, 3).map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      </div>
-    </section>
-    <section className="py-16 sm:py-24 bg-gray-50 dark:bg-gray-900/50">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">New Arrivals</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
-          {mockProducts.slice(3, 6).map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      </div>
-    </section>
-  </>
-);
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(6));
+        const querySnapshot = await getDocs(q);
+        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productList);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching new arrivals:', error);
+        setError('Failed to load new arrivals. Please try again.');
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, []);
 
-const ProductPage = ({ id }) => {
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+
+  return (
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">New Arrivals</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+        {products.map(product => (
+          <ProductCard key={product.id} product={product} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CategoriesPage = () => {
+  const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'products'));
+        const products = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const uniqueCategories = [...new Set(products.map(product => product.category).filter(Boolean))];
+        setCategories(uniqueCategories);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        setError('Failed to load categories. Please try again.');
+        setLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+  if (categories.length === 0) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">No categories found.</div>;
+
+  return (
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Categories</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+        {categories.map(category => (
+          <div
+            key={category}
+            onClick={() => navigate(`/shop?category=${encodeURIComponent(category)}`)}
+            className="group cursor-pointer"
+          >
+            <div className="overflow-hidden bg-gray-100 dark:bg-gray-800/50 rounded-lg">
+              <img
+                src={`https://placehold.co/400x600/amber-100/gray-800?text=${encodeURIComponent(category)}`}
+                alt={category}
+                className="w-full h-auto object-cover aspect-[2/3] group-hover:scale-105 transition-transform duration-500 ease-in-out"
+              />
+            </div>
+            <div className="mt-4 text-center">
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-amber-800 dark:group-hover:text-amber-600 transition-colors duration-300">
+                {category}
+              </h3>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CollectionsPage = () => {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const q = query(collection(db, 'products'), orderBy('category'));
+        const querySnapshot = await getDocs(q);
+        const productList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productList);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching collections:', error);
+        setError('Failed to load collections. Please try again.');
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, []);
+
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (error) return <div className="text-center py-20 text-red-600">{error}</div>;
+
+  return (
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Collections</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+        {products.map(product => (
+          <ProductCard key={product.id} product={product} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ProductPage = () => {
   const { addToCart } = useContext(CartContext);
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const [product, setProduct] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [notification, setNotification] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const product = mockProducts.find(p => p.id === id);
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'products'));
+        const foundProduct = querySnapshot.docs.find(doc => doc.id === id);
+        if (foundProduct) {
+          setProduct({ id: foundProduct.id, ...foundProduct.data() });
+        } else {
+          setError('Product not found.');
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching product:', error);
+        setError('Failed to load product. Please try again.');
+        setLoading(false);
+      }
+    };
+    if (id) {
+      fetchProduct();
+    } else {
+      setError('Invalid product ID.');
+      setLoading(false);
+    }
+  }, [id]);
 
-  if (!product) {
-    return <div className="text-center py-20">Product not found.</div>;
-  }
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (error || !product) return <div className="text-center py-20 text-red-600">{error || 'Product not found.'}</div>;
 
   const handleAddToCart = () => {
     if (!selectedSize) {
@@ -428,6 +517,12 @@ const ProductPage = ({ id }) => {
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <button
+        onClick={() => navigate(-1)}
+        className="mb-6 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600"
+      >
+        &larr; Back
+      </button>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
         <div>
           <img src={product.image} alt={product.name} className="w-full h-auto object-cover rounded-lg shadow-lg" />
@@ -436,11 +531,10 @@ const ProductPage = ({ id }) => {
           <h1 className="text-3xl md:text-4xl font-serif font-bold text-gray-900 dark:text-white">{product.name}</h1>
           <p className="mt-4 text-2xl font-semibold text-gray-800 dark:text-gray-200">PKR {product.price.toLocaleString()}</p>
           <p className="mt-6 text-gray-600 dark:text-gray-400 leading-relaxed">{product.description}</p>
-
           <div className="mt-8">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-200">Size</h3>
             <div className="flex flex-wrap gap-3 mt-4">
-              {product.sizes.map(size => (
+              {product.sizes?.map(size => (
                 <button
                   key={size}
                   onClick={() => setSelectedSize(size)}
@@ -452,26 +546,23 @@ const ProductPage = ({ id }) => {
                 >
                   {size}
                 </button>
-              ))}
+              )) || <p className="text-gray-500">No sizes available</p>}
             </div>
           </div>
-
           <div className="mt-8 flex items-center space-x-4">
-            <button onClick={handleAddToCart} className="flex-1 px-8 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md disabled:opacity-50">
+            <button onClick={handleAddToCart} className="flex-1 px-8 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
               Add to Cart
             </button>
           </div>
-
           {notification && (
             <div className="mt-4 text-center text-sm font-medium text-green-600 dark:text-green-400 transition-opacity duration-300">
               {notification}
             </div>
           )}
-
           <div className="mt-10">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-200">Details</h3>
             <ul className="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-400 list-disc list-inside">
-              {product.details.map(detail => <li key={detail}>{detail}</li>)}
+              {product.details?.map(detail => <li key={detail}>{detail}</li>) || <li>No details available</li>}
             </ul>
           </div>
         </div>
@@ -482,7 +573,7 @@ const ProductPage = ({ id }) => {
 
 const CartPage = () => {
   const { cartItems, removeFromCart, updateQuantity, cartTotal } = useContext(CartContext);
-  const { navigate } = useContext(PageContext);
+  const navigate = useNavigate();
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
@@ -490,7 +581,7 @@ const CartPage = () => {
       {cartItems.length === 0 ? (
         <div className="text-center">
           <p className="text-gray-600 dark:text-gray-400">Your cart is empty.</p>
-          <button onClick={() => navigate('home')} className="mt-6 px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
+          <button onClick={() => navigate('/shop')} className="mt-6 px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
             Continue Shopping
           </button>
         </div>
@@ -530,14 +621,14 @@ const CartPage = () => {
           </div>
           <div className="lg:col-span-1">
             <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-6 sticky top-24">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white">Order summary</h2>
+              <h2 className="text-lg font-medium text-gray-900 dark:text-white">Order Summary</h2>
               <div className="mt-6 flex justify-between text-base font-medium text-gray-900 dark:text-white">
                 <p>Subtotal</p>
                 <p>PKR {cartTotal.toLocaleString()}</p>
               </div>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Shipping and taxes calculated at checkout.</p>
               <div className="mt-6">
-                <button onClick={() => navigate('checkout')} className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
+                <button onClick={() => navigate('/checkout')} className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
                   Checkout
                 </button>
               </div>
@@ -551,70 +642,121 @@ const CartPage = () => {
 
 const CheckoutPage = () => {
   const { cartItems, cartTotal, clearCart } = useContext(CartContext);
-  const { navigate } = useContext(PageContext);
-  const { isAuthenticated } = useContext(AuthContext);
+  const { user, loading: authLoading } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({
+    fullName: user?.name || '',
+    email: user?.email || '',
+    address: user?.address || '',
+    city: '',
+    postalCode: '',
+    cardNumber: '',
+    expiry: '',
+    cvc: ''
+  });
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('login');
+    if (!authLoading && !user) {
+      navigate('/login', { state: { redirect: '/checkout' } });
     }
-  }, [isAuthenticated, navigate]);
+  }, [user, authLoading, navigate]);
 
-  if (!isAuthenticated) {
-    return null; // or a loading spinner
-  }
+  if (authLoading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
 
-  const handlePlaceOrder = (e) => {
+  const handleInputChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handlePlaceOrder = async (e) => {
     e.preventDefault();
-    console.log('Placing order...');
-    clearCart();
-    alert('Thank you for your order! Your purchase was successful.');
-    navigate('home');
+    if (!user) {
+      setError('Please log in to place an order.');
+      return;
+    }
+    try {
+      const orderRef = await addDoc(collection(db, `users/${user.uid}/orders`), {
+        items: cartItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          quantity: item.quantity,
+          price: item.price
+        })),
+        total: cartTotal,
+        status: 'Processing',
+        date: new Date().toISOString(),
+        customerEmail: user.email,
+        shipping: formData
+      });
+      await addDoc(collection(db, 'orders'), {
+        id: orderRef.id,
+        customerEmail: user.email,
+        items: cartItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          quantity: item.quantity,
+          price: item.price
+        })),
+        total: cartTotal,
+        status: 'Processing',
+        date: new Date().toISOString(),
+        shipping: formData
+      });
+      clearCart();
+      alert('Thank you for your order! Your purchase was successful.');
+      navigate('/');
+    } catch (error) {
+      console.error('Error placing order:', error);
+      setError('Failed to place order. Please try again.');
+    }
   };
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
       <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">Checkout</h1>
+      {error && <p className="text-center text-red-600 mb-6">{error}</p>}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <div>
-          <h2 className="text-xl font-semibold mb-6">Shipping Information</h2>
-          <form className="space-y-4">
-            <input type="text" placeholder="Full Name" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
-            <input type="email" placeholder="Email" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
-            <input type="text" placeholder="Address" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
+          <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Shipping Information</h2>
+          <form className="space-y-4" onSubmit={handlePlaceOrder}>
+            <input name="fullName" value={formData.fullName} onChange={handleInputChange} type="text" placeholder="Full Name" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+            <input name="email" value={formData.email} onChange={handleInputChange} type="email" placeholder="Email" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+            <input name="address" value={formData.address} onChange={handleInputChange} type="text" placeholder="Address" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
             <div className="flex space-x-4">
-              <input type="text" placeholder="City" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
-              <input type="text" placeholder="Postal Code" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
+              <input name="city" value={formData.city} onChange={handleInputChange} type="text" placeholder="City" required className="flex-1 p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+              <input name="postalCode" value={formData.postalCode} onChange={handleInputChange} type="text" placeholder="Postal Code" required className="flex-1 p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
             </div>
           </form>
-          <h2 className="text-xl font-semibold mt-10 mb-6">Payment Details</h2>
+          <h2 className="text-xl font-semibold mt-10 mb-6 text-gray-900 dark:text-white">Payment Details</h2>
           <form className="space-y-4">
-            <input type="text" placeholder="Card Number" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
+            <input name="cardNumber" value={formData.cardNumber} onChange={handleInputChange} type="text" placeholder="Card Number" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
             <div className="flex space-x-4">
-              <input type="text" placeholder="MM / YY" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
-              <input type="text" placeholder="CVC" className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
+              <input name="expiry" value={formData.expiry} onChange={handleInputChange} type="text" placeholder="MM / YY" required className="flex-1 p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
+              <input name="cvc" value={formData.cvc} onChange={handleInputChange} type="text" placeholder="CVC" required className="flex-1 p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200" />
             </div>
           </form>
         </div>
         <div className="bg-gray-50 dark:bg-gray-900/50 p-8 rounded-lg">
-          <h2 className="text-xl font-semibold mb-6">Your Order</h2>
+          <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">Your Order</h2>
           <ul className="space-y-4">
             {cartItems.map(item => (
               <li key={`${item.id}-${item.size}`} className="flex justify-between items-center">
                 <div>
-                  <p className="font-medium">{item.name} <span className="text-sm text-gray-500 dark:text-gray-400">x {item.quantity}</span></p>
+                  <p className="font-medium text-gray-900 dark:text-white">{item.name} <span className="text-sm text-gray-500 dark:text-gray-400">x {item.quantity}</span></p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Size: {item.size}</p>
                 </div>
-                <p>PKR {(item.price * item.quantity).toLocaleString()}</p>
+                <p className="text-gray-900 dark:text-white">PKR {(item.price * item.quantity).toLocaleString()}</p>
               </li>
             ))}
           </ul>
           <div className="border-t border-gray-200 dark:border-gray-700 my-6"></div>
-          <div className="flex justify-between font-semibold text-lg">
+          <div className="flex justify-between font-semibold text-lg text-gray-900 dark:text-white">
             <p>Total</p>
             <p>PKR {cartTotal.toLocaleString()}</p>
           </div>
-          <button onClick={handlePlaceOrder} className="mt-8 w-full px-6 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
+          <button onClick={handlePlaceOrder} type="submit" className="mt-8 w-full px-6 py-4 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
             Place Order
           </button>
         </div>
@@ -624,40 +766,124 @@ const CheckoutPage = () => {
 };
 
 const LoginPage = () => {
-  const { login, signup } = useContext(AuthContext);
-  const { navigate } = useContext(PageContext);
+  const { login, signup, loginWithGoogle } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isLoginView, setIsLoginView] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isLoginView) {
-      login(email, password);
-    } else {
-      signup(name, email, password);
+    setError('');
+    try {
+      if (isLoginView) {
+        const success = await login(email, password);
+        if (success) {
+          const redirect = location.state?.redirect || '/';
+          navigate(redirect);
+        } else {
+          setError('Invalid email or password.');
+        }
+      } else {
+        if (password !== confirmPassword) {
+          setError('Passwords do not match.');
+          return;
+        }
+        if (password.length < 6) {
+          setError('Password must be at least 6 characters.');
+          return;
+        }
+        const success = await signup(name, email, password);
+        if (success) {
+          const redirect = location.state?.redirect || '/';
+          navigate(redirect);
+        } else {
+          setError('Failed to create account. Try a different email.');
+        }
+      }
+    } catch (error) {
+      setError(error.message || 'An error occurred.');
+      console.error('Auth error:', error.message);
     }
-    navigate('profile');
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const success = await loginWithGoogle();
+      if (success) {
+        const redirect = location.state?.redirect || '/';
+        navigate(redirect);
+      } else {
+        setError('Google login failed.');
+      }
+    } catch (error) {
+      setError(error.message || 'Google login failed.');
+      console.error('Google login error:', error.message);
+    }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[70vh] py-12">
+    <div className="flex items-center justify-center min-h-[70vh] py-12 bg-gray-100 dark:bg-gray-900">
       <div className="w-full max-w-md p-8 space-y-8 bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg">
         <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white">{isLoginView ? 'Login' : 'Sign Up'}</h1>
+        {error && <p className="text-center text-red-600">{error}</p>}
         <form onSubmit={handleSubmit} className="space-y-6">
           {!isLoginView && (
-            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Full Name" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Full Name"
+              required
+              className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+            />
           )}
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email Address" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="w-full p-3 border rounded-md bg-transparent dark:border-gray-700 focus:ring-amber-700" />
-          <button type="submit" className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md">
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="Email Address"
+            required
+            className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Password"
+            required
+            className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+          />
+          {!isLoginView && (
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="Confirm Password"
+              required
+              className="w-full p-3 border rounded-md bg-transparent border-gray-300 dark:border-gray-700 focus:ring-amber-700 text-gray-800 dark:text-gray-200"
+            />
+          )}
+          <button
+            type="submit"
+            className="w-full px-6 py-3 bg-amber-800 text-white uppercase tracking-widest text-sm font-semibold hover:bg-amber-900 transition-colors duration-300 rounded-md"
+          >
             {isLoginView ? 'Login' : 'Create Account'}
           </button>
         </form>
-        <p className="text-center text-sm">
+        <button
+          onClick={handleGoogleLogin}
+          className="w-full px-6 py-3 bg-gray-700 text-white uppercase tracking-widest text-sm font-semibold hover:bg-gray-800 transition-colors duration-300 rounded-md"
+        >
+          Login with Google
+        </button>
+        <p className="text-center text-sm text-gray-600 dark:text-gray-400">
           {isLoginView ? "Don't have an account?" : "Already have an account?"}
-          <button onClick={() => setIsLoginView(!isLoginView)} className="ml-2 font-medium text-amber-700 hover:text-amber-900 dark:text-amber-600 dark:hover:text-amber-500">
+          <button type="button" onClick={() => setIsLoginView(!isLoginView)} className="ml-2 font-medium text-amber-700 hover:text-amber-900 dark:text-amber-600 dark:hover:text-amber-500">
             {isLoginView ? 'Sign Up' : 'Login'}
           </button>
         </p>
@@ -667,50 +893,55 @@ const LoginPage = () => {
 };
 
 const ProfilePage = () => {
-  const { user, logout, isAuthenticated } = useContext(AuthContext);
-  const { navigate } = useContext(PageContext);
+  const { user, logout, loading } = useContext(AuthContext);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('login');
+    if (!loading && !user) {
+      navigate('/login');
     }
-  }, [isAuthenticated, navigate]);
+  }, [user, loading, navigate]);
 
-  if (!isAuthenticated || !user) {
-    return null; // or a loading spinner
-  }
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
+  if (!user) return <div className="text-center py-20 text-red-600">Please log in to view your profile.</div>;
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
       <h1 className="text-3xl font-serif font-bold text-center text-gray-900 dark:text-white mb-12">My Profile</h1>
       <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg p-8">
         <div className="mb-6">
-          <h2 className="text-xl font-semibold">Account Details</h2>
-          <p><strong>Name:</strong> {user.name}</p>
-          <p><strong>Email:</strong> {user.email}</p>
-          <p><strong>Address:</strong> {user.address}</p>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Details</h2>
+          <p className="text-gray-800 dark:text-gray-200"><strong>Name:</strong> {user.name}</p>
+          <p className="text-gray-800 dark:text-gray-200"><strong>Email:</strong> {user.email}</p>
+          <p className="text-gray-800 dark:text-gray-200"><strong>Address:</strong> {user.address}</p>
         </div>
         <div>
-          <h2 className="text-xl font-semibold mb-4">Order History</h2>
+          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Order History</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                {user.orders.map(order => (
-                  <tr key={order.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">{order.id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">{order.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">PKR {order.total.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">{order.status}</td>
+                {user.orders && user.orders.length > 0 ? (
+                  user.orders.map(order => (
+                    <tr key={order.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-800 dark:text-gray-200">{order.id}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-800 dark:text-gray-200">{order.date?.split('T')[0] || 'N/A'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-800 dark:text-gray-200">PKR {order.total?.toLocaleString() || '0'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-800 dark:text-gray-200">{order.status}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No orders yet.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -718,7 +949,7 @@ const ProfilePage = () => {
         <button
           onClick={() => {
             logout();
-            navigate('home');
+            navigate('/');
           }}
           className="mt-8 w-full sm:w-auto px-6 py-3 bg-red-700 text-white uppercase tracking-widest text-sm font-semibold hover:bg-red-800 transition-colors duration-300 rounded-md"
         >
@@ -729,51 +960,182 @@ const ProfilePage = () => {
   );
 };
 
-// --- Main App Component ---
-function App() {
-  const { page } = useContext(PageContext);
+// --- NAVIGATION ---
+const Navbar = () => {
+  const { isDarkMode, toggleTheme } = useContext(ThemeContext);
+  const { user, loading } = useContext(AuthContext);
+  const { cartCount } = useContext(CartContext);
+  const navigate = useNavigate();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const renderPage = () => {
-    switch (page.name) {
-      case 'home':
-        return <HomePage />;
-      case 'product':
-        return <ProductPage id={page.data.id} />;
-      case 'cart':
-        return <CartPage />;
-      case 'checkout':
-        return <CheckoutPage />;
-      case 'login':
-        return <LoginPage />;
-      case 'profile':
-        return <ProfilePage />;
-      default:
-        return <HomePage />;
-    }
-  };
+  const navLinks = [
+    { name: 'Home', path: '/' },
+    { name: 'Shop', path: '/shop' },
+    { name: 'New Arrivals', path: '/new-arrivals' },
+    { name: 'Categories', path: '/categories' },
+    { name: 'Collections', path: '/collections' },
+  ];
+
+  if (loading) return <div className="text-center py-20 text-gray-800 dark:text-gray-200">Loading...</div>;
 
   return (
-    <div className="bg-white dark:bg-black text-gray-800 dark:text-gray-200 font-sans transition-colors duration-300">
+    <header className="sticky top-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-sm shadow-sm">
+      <nav className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-20">
+          <div className="md:hidden">
+            <button onClick={() => setIsMenuOpen(true)} className="text-gray-800 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-600">
+              <MenuIcon className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="flex-shrink-0">
+            <a onClick={() => navigate('/')} className="text-2xl font-serif font-bold tracking-widest text-gray-900 dark:text-white cursor-pointer">
+              LUXE
+            </a>
+          </div>
+          <div className="hidden md:flex md:items-center md:space-x-8">
+            {navLinks.map(link => (
+              <a
+                key={link.name}
+                onClick={() => navigate(link.path)}
+                className="text-sm font-medium uppercase tracking-wider text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300 cursor-pointer"
+              >
+                {link.name}
+              </a>
+            ))}
+          </div>
+          <div className="flex items-center space-x-4">
+            <button onClick={toggleTheme} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
+              {isDarkMode ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
+            </button>
+            <button onClick={() => navigate(user ? '/profile' : '/login')} className="text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300 relative">
+              <UserIcon className="h-6 w-6" />
+              {user && <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>}
+            </button>
+            <button onClick={() => navigate('/cart')} className="relative text-gray-600 dark:text-gray-300 hover:text-amber-800 dark:hover:text-amber-600 transition-colors duration-300">
+              <CartIcon className="h-6 w-6" />
+              {cartCount > 0 && (
+                <span className="absolute -top-2 -right-2 flex items-center justify-center h-5 w-5 bg-amber-700 text-white text-xs rounded-full">{cartCount}</span>
+              )}
+            </button>
+          </div>
+        </div>
+      </nav>
+      <div className={`fixed inset-0 z-50 transform ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out md:hidden bg-white dark:bg-black`}>
+        <div className="relative w-4/5 max-w-xs h-full p-6">
+          <button onClick={() => setIsMenuOpen(false)} className="absolute top-5 right-5 text-gray-800 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-600">
+            <CloseIcon className="h-6 w-6" />
+          </button>
+          <div className="mt-16 flex flex-col space-y-6">
+            {navLinks.map(link => (
+              <a
+                key={link.name}
+                onClick={() => { navigate(link.path); setIsMenuOpen(false); }}
+                className="text-lg font-medium uppercase tracking-wider text-gray-800 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-600 cursor-pointer"
+              >
+                {link.name}
+              </a>
+            ))}
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+              {user ? (
+                <button
+                  onClick={() => { navigate('/profile'); setIsMenuOpen(false); }}
+                  className="text-lg font-medium text-gray-800 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-600"
+                >
+                  Profile
+                </button>
+              ) : (
+                <button
+                  onClick={() => { navigate('/login'); setIsMenuOpen(false); }}
+                  className="text-lg font-medium text-gray-800 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-600"
+                >
+                  Login
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+const Footer = () => (
+  <footer className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div>
+          <h3 className="text-lg font-serif font-semibold text-gray-900 dark:text-white tracking-wider">LUXE</h3>
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">Timeless elegance, modern luxury. Crafted for the discerning individual.</p>
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Shop</h4>
+          <ul className="mt-4 space-y-2 text-sm">
+            <li><a href="/new-arrivals" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">New Arrivals</a></li>
+            <li><a href="/collections" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Collections</a></li>
+            <li><a href="/categories" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Categories</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Support</h4>
+          <ul className="mt-4 space-y-2 text-sm">
+            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Contact Us</a></li>
+            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">FAQ</a></li>
+            <li><a href="#" className="text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-600">Shipping & Returns</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-800 dark:text-gray-200">Newsletter</h4>
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">Subscribe for exclusive updates.</p>
+          <div className="mt-4 flex">
+            <input type="email" placeholder="Your email" className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-l-md focus:outline-none focus:ring-2 focus:ring-amber-700 text-sm text-gray-800 dark:text-gray-200" />
+            <button type="button" className="px-4 py-2 bg-amber-800 text-white rounded-r-md hover:bg-amber-900 transition-colors">
+              &rarr;
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-800 text-center text-sm text-gray-500 dark:text-gray-400">
+        <p>&copy; {new Date().getFullYear()} LUXE Apparel. All Rights Reserved.</p>
+      </div>
+    </div>
+  </footer>
+);
+
+// --- Main App Component ---
+function App() {
+  return (
+    <div className="bg-white dark:bg-black text-gray-800 dark:text-gray-200 font-sans transition-colors duration-300 min-h-screen">
       <Navbar />
       <main>
-        {renderPage()}
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/shop" element={<ShopPage />} />
+          <Route path="/new-arrivals" element={<NewArrivalsPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/collections" element={<CollectionsPage />} />
+          <Route path="/product/:id" element={<ProductPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+        </Routes>
       </main>
       <Footer />
     </div>
   );
 }
 
-// --- Root Component with Providers ---
+// --- Root Component ---
 export default function Root() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <CartProvider>
-          <PageProvider>
+    <Router>
+      <ThemeProvider>
+        <AuthProvider>
+          <CartProvider>
             <App />
-          </PageProvider>
-        </CartProvider>
-      </AuthProvider>
-    </ThemeProvider>
+          </CartProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </Router>
   );
 }

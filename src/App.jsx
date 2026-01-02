@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useContext, createContext, useRef } from 'react';
+// --- INSTRUCTIONS FOR LOCAL USE ---
+// 1. Uncomment the line below to use your local firebase.js file
+// import { db, auth, googleProvider } from './firebase'; 
+
+// 2. Comment out the "FIREBASE INITIALIZATION (PREVIEW MODE)" block below when running locally
+
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, getDocs, getDoc, addDoc, setDoc, doc, 
@@ -11,8 +17,62 @@ import {
 } from 'firebase/auth';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
 
-// --- ICONS (Inline SVGs to remove dependency) ---
-const IconWrapper = ({ children, className }) => (
+// --- FIREBASE INITIALIZATION (PREVIEW MODE) ---
+// This block ensures the app runs in the preview environment. 
+// Comment this out if using your local './firebase' import.
+//const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+//const app = initializeApp(firebaseConfig);
+//const auth = getAuth(app);
+//const db = getFirestore(app);
+//const googleProvider = new GoogleAuthProvider();
+// ----------------------------------------------
+
+// --- APP ID SETUP ---
+// Used to separate data in the shared environment. Locally, you can remove this and use standard collections.
+const rawAppId = typeof __app_id !== 'undefined' ? String(__app_id) : 'default-app-id';
+const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+// --- ERROR BOUNDARY ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("React Error Boundary caught an error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-gray-100 p-4">
+          <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h2>
+            <p className="text-gray-600 mb-4">The application encountered an unexpected error.</p>
+            <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto text-red-500 mb-4">
+              {this.state.error?.toString()}
+            </pre>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-black text-white py-2 px-4 rounded hover:bg-gray-800 transition"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- ICONS (Inline SVGs to avoid dependency errors) ---
+const IconWrapper = ({ children, className, onClick }) => (
   <svg 
     xmlns="http://www.w3.org/2000/svg" 
     width="24" 
@@ -24,153 +84,66 @@ const IconWrapper = ({ children, className }) => (
     strokeLinecap="round" 
     strokeLinejoin="round" 
     className={className}
+    onClick={onClick}
   >
     {children}
   </svg>
 );
 
-const Search = ({ className }) => (
-  <IconWrapper className={className}>
-    <circle cx="11" cy="11" r="8"></circle>
-    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-  </IconWrapper>
+const Search = (props) => (
+  <IconWrapper {...props}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></IconWrapper>
 );
-
-const ShoppingBag = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-    <line x1="3" y1="6" x2="21" y2="6"></line>
-    <path d="M16 10a4 4 0 0 1-8 0"></path>
-  </IconWrapper>
+const ShoppingBag = (props) => (
+  <IconWrapper {...props}><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></IconWrapper>
 );
-
-const Menu = ({ className }) => (
-  <IconWrapper className={className}>
-    <line x1="3" y1="12" x2="21" y2="12"></line>
-    <line x1="3" y1="6" x2="21" y2="6"></line>
-    <line x1="3" y1="18" x2="21" y2="18"></line>
-  </IconWrapper>
+const Menu = (props) => (
+  <IconWrapper {...props}><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></IconWrapper>
 );
-
-const X = ({ className }) => (
-  <IconWrapper className={className}>
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
-  </IconWrapper>
+const X = (props) => (
+  <IconWrapper {...props}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></IconWrapper>
 );
-
-const Star = ({ className }) => (
-  <IconWrapper className={className}>
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-  </IconWrapper>
+const Star = (props) => (
+  <IconWrapper {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></IconWrapper>
 );
-
-const Shirt = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"></path>
-  </IconWrapper>
+const Shirt = (props) => (
+  <IconWrapper {...props}><path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"></path></IconWrapper>
 );
-
-const Instagram = ({ className }) => (
-  <IconWrapper className={className}>
-    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-  </IconWrapper>
+const Instagram = (props) => (
+  <IconWrapper {...props}><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></IconWrapper>
 );
-
-const Twitter = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path>
-  </IconWrapper>
+const Twitter = (props) => (
+  <IconWrapper {...props}><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path></IconWrapper>
 );
-
-const Youtube = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"></path>
-    <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
-  </IconWrapper>
+const Youtube = (props) => (
+  <IconWrapper {...props}><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></IconWrapper>
 );
-
-const Plus = ({ className }) => (
-  <IconWrapper className={className}>
-    <line x1="12" y1="5" x2="12" y2="19"></line>
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-  </IconWrapper>
+const Plus = (props) => (
+  <IconWrapper {...props}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></IconWrapper>
 );
-
-const Eye = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-    <circle cx="12" cy="12" r="3"></circle>
-  </IconWrapper>
+const Eye = (props) => (
+  <IconWrapper {...props}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></IconWrapper>
 );
-
-const ArrowRight = ({ className }) => (
-  <IconWrapper className={className}>
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-    <polyline points="12 5 19 12 12 19"></polyline>
-  </IconWrapper>
+const ArrowRight = (props) => (
+  <IconWrapper {...props}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></IconWrapper>
 );
-
-const User = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-    <circle cx="12" cy="7" r="4"></circle>
-  </IconWrapper>
+const User = (props) => (
+  <IconWrapper {...props}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></IconWrapper>
 );
-
-const LogOut = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-    <polyline points="16 17 21 12 16 7"></polyline>
-    <line x1="21" y1="12" x2="9" y2="12"></line>
-  </IconWrapper>
+const LogOut = (props) => (
+  <IconWrapper {...props}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></IconWrapper>
 );
-
-const Trash2 = ({ className }) => (
-  <IconWrapper className={className}>
-    <polyline points="3 6 5 6 21 6"></polyline>
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-    <line x1="10" y1="11" x2="10" y2="17"></line>
-    <line x1="14" y1="11" x2="14" y2="17"></line>
-  </IconWrapper>
+const Trash2 = (props) => (
+  <IconWrapper {...props}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></IconWrapper>
 );
-
-const CheckCircle = ({ className }) => (
-  <IconWrapper className={className}>
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-  </IconWrapper>
+const CheckCircle = (props) => (
+  <IconWrapper {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></IconWrapper>
 );
-
-const AlertCircle = ({ className }) => (
-  <IconWrapper className={className}>
-    <circle cx="12" cy="12" r="10"></circle>
-    <line x1="12" y1="8" x2="12" y2="12"></line>
-    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-  </IconWrapper>
+const AlertCircle = (props) => (
+  <IconWrapper {...props}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></IconWrapper>
 );
-
-const Info = ({ className }) => (
-  <IconWrapper className={className}>
-    <circle cx="12" cy="12" r="10"></circle>
-    <line x1="12" y1="16" x2="12" y2="12"></line>
-    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-  </IconWrapper>
+const Info = (props) => (
+  <IconWrapper {...props}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></IconWrapper>
 );
-
-// --- FIREBASE INITIALIZATION ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
-
-// --- APP ID SANITIZATION ---
-// This fixes the "Invalid document reference" error by removing slashes/special chars from the ID
-let rawAppId = typeof __app_id !== 'undefined' ? String(__app_id) : 'default-app-id';
-const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
 // --- GLOBAL STYLES ---
 const GlobalStyles = () => (
@@ -344,7 +317,7 @@ const CartProvider = ({ children }) => {
 
   const clearCart = () => setCartItems([]);
 
-  const cartTotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+  const cartTotal = cartItems.reduce((total, item) => total + (item.price || 0) * item.quantity, 0);
   const cartCount = cartItems.reduce((count, item) => count + item.quantity, 0);
 
   return (
@@ -378,7 +351,7 @@ const AuthProvider = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser && !currentUser.isAnonymous) {
         try {
-            // Using safe document reference
+            // Using safe document reference with appId
             const userDoc = await getDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data'));
             const userData = userDoc.exists() ? userDoc.data() : {};
             
@@ -406,6 +379,7 @@ const AuthProvider = ({ children }) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
+      // Using appId for safe paths
       await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid, 'profile', 'data'), {
         id: userCredential.user.uid,
         name,
@@ -597,7 +571,7 @@ const CartDrawer = () => {
                     Size: {item.size}
                   </div>
                   <div className="flex justify-between items-center">
-                    <p className="font-mono text-sm font-bold text-black">PKR {item.price.toLocaleString()}</p>
+                    <p className="font-mono text-sm font-bold text-black">PKR {(item.price || 0).toLocaleString()}</p>
                     <div className="flex items-center border border-gray-200 rounded-sm">
                         <button onClick={() => updateQuantity(item.id, item.size, item.quantity - 1)} className="px-2 py-1 text-xs">-</button>
                         <span className="px-2 text-xs font-mono">{item.quantity}</span>
@@ -653,7 +627,7 @@ const ProductCard = ({ product }) => {
             <h3 className="font-sans font-bold text-lg group-hover:text-[#8c8c8c] transition-colors uppercase tracking-tight text-black">{product.name}</h3>
             <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">280 GSM • Heavyweight</p>
         </div>
-        <span className="font-mono text-sm font-bold text-black">PKR {product.price?.toLocaleString()}</span>
+        <span className="font-mono text-sm font-bold text-black">PKR {(product.price || 0).toLocaleString()}</span>
       </div>
     </div>
   );
@@ -666,7 +640,6 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Wrapped in try/catch for safety
     try {
         const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'products'), limit(6));
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -732,7 +705,7 @@ const HomePage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-16 gap-x-8">
             {loading ? <div className="loader"></div> : (products.length > 0 ? products.map(product => (
               <ProductCard key={product.id} product={product} />
-            )) : <p>No products loaded (Add some to Firestore at artifacts/{appId}/public/data/products)</p>)}
+            )) : <div className="text-gray-500">No products loaded.</div>)}
           </div>
         </div>
       </section>
@@ -854,7 +827,7 @@ const ProductPage = () => {
                 </div>
                 <div className="flex flex-col justify-center">
                     <h1 className="text-4xl md:text-6xl font-serif mb-4 text-black">{product.name}</h1>
-                    <p className="text-2xl font-mono font-bold mb-8 text-black">PKR {product.price?.toLocaleString()}</p>
+                    <p className="text-2xl font-mono font-bold mb-8 text-black">PKR {(product.price || 0).toLocaleString()}</p>
                     <p className="text-gray-600 mb-8 leading-relaxed">{product.description || "Designed for the modern streetwear aesthetic. Heavyweight cotton, drop-shoulder fit."}</p>
                     
                     <div className="mb-8">
@@ -1151,6 +1124,7 @@ const Footer = () => (
 // --- MAIN APP ---
 const App = () => {
     return (
+      <ErrorBoundary>
         <Router>
             <ToastProvider>
                 <AuthProvider>
@@ -1172,6 +1146,7 @@ const App = () => {
                 </AuthProvider>
             </ToastProvider>
         </Router>
+      </ErrorBoundary>
     );
 };
 

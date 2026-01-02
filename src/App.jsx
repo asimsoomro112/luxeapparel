@@ -1,36 +1,53 @@
 import React, { useState, useEffect, useContext, createContext, useRef } from 'react';
-// --- INSTRUCTIONS FOR LOCAL USE ---
-// 1. Uncomment the line below to use your local firebase.js file
-// import { db, auth, googleProvider } from './firebase'; 
-
-// 2. Comment out the "FIREBASE INITIALIZATION (PREVIEW MODE)" block below when running locally
-
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, collection, getDocs, getDoc, addDoc, setDoc, doc, 
-  query, orderBy, limit, where, onSnapshot, updateDoc 
-} from 'firebase/firestore';
-import { 
-  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, 
-  signInWithPopup, signOut, onAuthStateChanged, updateProfile, 
-  GoogleAuthProvider, signInWithCustomToken, signInAnonymously 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  updateProfile, 
+  GoogleAuthProvider, 
+  setPersistence, 
+  browserSessionPersistence 
 } from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  setDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  limit, 
+  where, 
+  onSnapshot, 
+  updateDoc 
+} from 'firebase/firestore';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
 
-// --- FIREBASE INITIALIZATION (PREVIEW MODE) ---
-// This block ensures the app runs in the preview environment. 
-// Comment this out if using your local './firebase' import.
-//const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-//const app = initializeApp(firebaseConfig);
-//const auth = getAuth(app);
-//const db = getFirestore(app);
-//const googleProvider = new GoogleAuthProvider();
-// ----------------------------------------------
+// --- FIREBASE INITIALIZATION (CUSTOM CONFIG) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCv3aMVRQPwp-6gJZtO3596sQ_MbeNxbxg",
+  authDomain: "luxeapparel-d8c68.firebaseapp.com",
+  projectId: "luxeapparel-d8c68",
+  storageBucket: "luxeapparel-d8c68.firebasestorage.app",
+  messagingSenderId: "439094012093",
+  appId: "1:439094012093:web:0b4b611adb8d1a92892fd4",
+  measurementId: "G-XKE3N8QQHB"
+};
 
-// --- APP ID SETUP ---
-// Used to separate data in the shared environment. Locally, you can remove this and use standard collections.
-const rawAppId = typeof __app_id !== 'undefined' ? String(__app_id) : 'default-app-id';
-const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const googleProvider = new GoogleAuthProvider();
+
+setPersistence(auth, browserSessionPersistence)
+  .catch(error => console.error('Error setting persistence:', error));
+// ----------------------------------------------
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -333,26 +350,11 @@ const AuthProvider = ({ children }) => {
   const { addToast } = useToast();
 
   useEffect(() => {
-    const initAuth = async () => {
-        try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                if (!auth.currentUser) {
-                     await signInAnonymously(auth);
-                }
-            }
-        } catch (error) {
-            console.error("Auth init failed", error);
-        }
-    };
-    initAuth();
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser && !currentUser.isAnonymous) {
+      if (currentUser) {
         try {
-            // Using safe document reference with appId
-            const userDoc = await getDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data'));
+            // Using standard root paths
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
             const userData = userDoc.exists() ? userDoc.data() : {};
             
             setUser({
@@ -379,8 +381,7 @@ const AuthProvider = ({ children }) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
-      // Using appId for safe paths
-      await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid, 'profile', 'data'), {
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
         id: userCredential.user.uid,
         name,
         email,
@@ -408,7 +409,7 @@ const AuthProvider = ({ children }) => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
-      const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
+      const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) {
         await setDoc(userRef, {
@@ -641,7 +642,7 @@ const HomePage = () => {
 
   useEffect(() => {
     try {
-        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'products'), limit(6));
+        const q = query(collection(db, 'products'), limit(6));
         const unsubscribe = onSnapshot(q, (snapshot) => {
           setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
           setLoading(false);
@@ -769,7 +770,7 @@ const ShopPage = () => {
   
   useEffect(() => {
     try {
-        let q = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+        let q = collection(db, 'products');
         const unsubscribe = onSnapshot(q, (snapshot) => {
             let items = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
             if (cat) {
@@ -804,7 +805,7 @@ const ProductPage = () => {
     useEffect(() => {
         const fetchProduct = async () => {
             try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', id);
+                const docRef = doc(db, 'products', id);
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists()) {
                     setProduct({ id: docSnap.id, ...docSnap.data() });
@@ -896,7 +897,10 @@ const CheckoutPage = () => {
                 shipping: formData,
                 createdAt: new Date().toISOString()
             };
-            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'), orderData);
+            await addDoc(collection(db, 'orders'), orderData);
+            if (user) {
+              await addDoc(collection(db, 'users', user.uid, 'orders'), orderData);
+            }
             clearCart();
             addToast("Order Placed Successfully!", "success");
             navigate('/profile');
@@ -1029,7 +1033,8 @@ const ProfilePage = () => {
     useEffect(() => {
         if(user) {
             try {
-                const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'), orderBy('createdAt', 'desc'));
+                // Using standard root paths compatible with direct Firebase usage
+                const q = query(collection(db, 'users', user.uid, 'orders'), orderBy('createdAt', 'desc'));
                 const unsubscribe = onSnapshot(q, snap => {
                     setOrders(snap.docs.map(d => ({id: d.id, ...d.data()})));
                 }, (e) => console.error(e));
